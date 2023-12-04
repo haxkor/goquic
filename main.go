@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
@@ -16,6 +17,8 @@ import (
 	"time"
 
 	"github.com/quic-go/quic-go"
+	"github.com/quic-go/quic-go/logging"
+	"github.com/quic-go/quic-go/qlog"
 	"github.com/quic-go/quic-go/quicvarint"
 
 	"github.com/mengelbart/gst-go"
@@ -106,10 +109,24 @@ func server() error {
 	if err != nil {
 		panic(err)
 	}
+	//tracer := quiclogging.Tracer
+	//tracer := logging.Tracer{}
 	conf := &quic.Config{
 		MaxIncomingStreams: 1 << 60,
 		MaxIdleTimeout:     99999 * time.Second,
+		//Tracer:             tracer,
 	}
+
+	conf.Tracer = func(ctx context.Context, p logging.Perspective, connID quic.ConnectionID) *logging.ConnectionTracer {
+		filename := fmt.Sprintf("client_%x.qlog", connID)
+		f, err := os.Create(filename)
+		if err != nil {
+			log.Fatal(err)
+		}
+		log.Printf("Creating qlog file %s.\n", filename)
+		return qlog.NewConnectionTracer(NewBufferedWriteCloser(bufio.NewWriter(f), f), p, connID)
+	}
+
 	listener, err := quic.ListenAddr(addr, generateTLSConfig(), conf)
 	if err != nil {
 		return err
@@ -188,7 +205,7 @@ func server() error {
 }
 
 func client_datagrams() error {
-	gst_pipe, err := gst.NewPipeline("appsrc ! \"application/x-rtp, media=(string)video, clock-rate=(int)90000, encoding-name=(string)H264, payload=(int)96\" ! rtpjitterbuffer ! rtph264depay ! decodebin ! videoconvert ! autovideosink sync=false ")
+	gst_pipe, err := gst.NewPipeline("appsrc ! application/x-rtp, media=(string)video, clock-rate=(int)90000, encoding-name=(string)H264, payload=(int)96 ! rtpjitterbuffer ! rtph264depay ! decodebin ! videoconvert ! autovideosink sync=false ")
 
 	tlsConf := &tls.Config{
 		InsecureSkipVerify: true,
@@ -236,7 +253,7 @@ func receive_big_file(stream quic.Stream) error {
 	_, err = io.Copy(w_desc, stream)
 	stream.Close()
 
-	panic("trolol written")
+	panic("trolol has been written")
 	return err
 }
 
