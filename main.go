@@ -22,12 +22,48 @@ import (
 	"github.com/quic-go/quic-go/quicvarint"
 
 	"github.com/mengelbart/gst-go"
+
+	"github.com/pion/rtp"
 )
+
+// mtu=1300
+const client_pipe = "appsrc ! application/x-rtp, media=(string)video, clock-rate=(int)90000, encoding-name=(string)H264, payload=(int)96 ! rtpjitterbuffer ! rtph264depay ! decodebin ! videoconvert ! autovideosink sync=false "
+const server_pipe = "videotestsrc ! x264enc tune=zerolatency bitrate=500 speed-preset=superfast ! rtph264pay  seqnum-offset=100 ! appsink name=appsink"
+
+// const client_pipe = "appsrc name=src ! multipartdemux ! jpegdec ! autovideosink"
+// const server_pipe = "videotestsrc ! queue ! videoconvert ! jpegenc ! multipartmux ! appsink name=appsink"
+
+const addr = "localhost:4542"
+
+const USE_ONE_STREAM bool = false
+const USE_MANY_STREAMS bool = true
+const USE_DATAGRAMS bool = false
 
 type pkt struct {
 	flowID uint64
 	length uint64
 	buffer []byte
+}
+
+// class that accumulates the bytes and logs once the parse method doesnt fail, then clears buffer
+type RTP_logger struct {
+	accumulator []byte
+}
+
+func (logger *RTP_logger) log_part(buf []byte) error {
+	logger.accumulator = append(logger.accumulator, buf...)
+	log.Printf("lenght of acc: %d", len(logger.accumulator))
+
+	packet := rtp.Packet{}
+	err := packet.Unmarshal(buf)
+	if err != nil {
+		panic(err)
+	} else {
+		logger.accumulator = make([]byte, 0) // seq nrs were also parsed without this line
+	}
+	log.Printf("seq nr: %d", packet.SequenceNumber)
+	log.Printf("lenght of acc: %d", len(logger.accumulator))
+	return nil
 }
 
 func read_pkt(stream quic.ReceiveStream) (pkt, error) {
@@ -56,13 +92,6 @@ func write_pkt(stream quic.SendStream, bytes []byte) (int, error) {
 	return initial_len, err
 
 }
-
-const addr = "localhost:4542"
-
-const USE_ONE_STREAM bool = false
-const USE_MANY_STREAMS bool = true
-const USE_DATAGRAMS bool = false
-
 func count_use_constants() int {
 	constants := append(make([]bool, 0), USE_ONE_STREAM, USE_MANY_STREAMS, USE_DATAGRAMS)
 	sum := 0
@@ -74,11 +103,22 @@ func count_use_constants() int {
 	return sum
 }
 
+var log_output_path = flag.String("output", "", "where to save the qlog")
+
 func main() {
 	if count_use_constants() != 1 {
 		panic("more than one USE_ constant is set")
 	}
 	fmt.Println("kek")
+
+	if false {
+		w_desc, err := os.Create("/home/jasper/mymount/createdimalive")
+		if err != nil {
+			panic("failed to create im alive file")
+		}
+		defer w_desc.Close()
+		w_desc.Write([]byte("aa"))
+	}
 	isServer := flag.Bool("server", false, "server")
 	flag.Parse()
 
@@ -105,7 +145,7 @@ func main() {
 	}
 }
 func server() error {
-	gst_pipe, err := gst.NewPipeline("videotestsrc ! x264enc tune=zerolatency bitrate=500 speed-preset=superfast ! rtph264pay mtu=1300 ! appsink name=appsink")
+	gst_pipe, err := gst.NewPipeline(server_pipe)
 	if err != nil {
 		panic(err)
 	}
@@ -118,7 +158,7 @@ func server() error {
 	}
 
 	conf.Tracer = func(ctx context.Context, p logging.Perspective, connID quic.ConnectionID) *logging.ConnectionTracer {
-		filename := fmt.Sprintf("client_%x.qlog", connID)
+		filename := fmt.Sprintf("%s/server_%x.qlog", *log_output_path, connID)
 		f, err := os.Create(filename)
 		if err != nil {
 			log.Fatal(err)
@@ -152,6 +192,7 @@ func server() error {
 		gst_pipe.Start()
 	} else if USE_MANY_STREAMS {
 		var streams_count int = 0
+		rtp_logger := RTP_logger{}
 		gst_pipe.SetBufferHandler(func(buf gst.Buffer) {
 			stream, err := conn.AcceptStream(context.Background())
 			conn.SendMessage(buf.Bytes)
@@ -162,6 +203,10 @@ func server() error {
 			//n, err := stream.Write(buf.Bytes)
 			n, err := write_pkt(stream, buf.Bytes)
 			log.Printf("server wrote %d bytes to new stream, count = %d", n, streams_count)
+			// log_rtp_packet(buf.Bytes) # this crashes, because too little bytes
+			rtp_logger.log_part(buf.Bytes)
+
+			log.Printf("still in MANY_STREAMS")
 			if err != nil {
 				panic(err)
 			}
@@ -205,7 +250,7 @@ func server() error {
 }
 
 func client_datagrams() error {
-	gst_pipe, err := gst.NewPipeline("appsrc ! application/x-rtp, media=(string)video, clock-rate=(int)90000, encoding-name=(string)H264, payload=(int)96 ! rtpjitterbuffer ! rtph264depay ! decodebin ! videoconvert ! autovideosink sync=false ")
+	gst_pipe, err := gst.NewPipeline(client_pipe)
 
 	tlsConf := &tls.Config{
 		InsecureSkipVerify: true,
@@ -215,6 +260,16 @@ func client_datagrams() error {
 		MaxIdleTimeout:  99999 * time.Second,
 		EnableDatagrams: true,
 	}
+	conf.Tracer = func(ctx context.Context, p logging.Perspective, connID quic.ConnectionID) *logging.ConnectionTracer {
+		filename := fmt.Sprintf("%s/server_%x.qlog", *log_output_path, connID)
+		f, err := os.Create(filename)
+		if err != nil {
+			log.Fatal(err)
+		}
+		log.Printf("Creating qlog file %s.\n", filename)
+		return qlog.NewConnectionTracer(NewBufferedWriteCloser(bufio.NewWriter(f), f), p, connID)
+	}
+
 	conn, err := quic.DialAddr(context.Background(), addr, tlsConf, conf)
 	if err != nil {
 		return err
@@ -253,20 +308,31 @@ func receive_big_file(stream quic.Stream) error {
 	_, err = io.Copy(w_desc, stream)
 	stream.Close()
 
-	panic("trolol has been written")
+	// panic("trolol has been written")
 	return err
 }
 
 func client_many_streams() error {
-	gst_pipe, err := gst.NewPipeline("appsrc ! \"application/x-rtp, media=(string)video, clock-rate=(int)90000, encoding-name=(string)H264, payload=(int)96\" ! rtpjitterbuffer ! rtph264depay ! decodebin ! videoconvert ! autovideosink sync=false ")
+	gst_pipe, err := gst.NewPipeline(client_pipe)
 
 	tlsConf := &tls.Config{
 		InsecureSkipVerify: true,
 		NextProtos:         []string{"quic-echo-example"},
 	}
+
 	conf := &quic.Config{
 		MaxIdleTimeout: 99999 * time.Second,
 	}
+	conf.Tracer = func(ctx context.Context, p logging.Perspective, connID quic.ConnectionID) *logging.ConnectionTracer {
+		filename := fmt.Sprintf("%s/client_%x.qlog", *log_output_path, connID)
+		f, err := os.Create(filename)
+		if err != nil {
+			log.Fatal(err)
+		}
+		log.Printf("Creating qlog file %s.\n", filename)
+		return qlog.NewConnectionTracer(NewBufferedWriteCloser(bufio.NewWriter(f), f), p, connID)
+	}
+
 	conn, err := quic.DialAddr(context.Background(), addr, tlsConf, conf)
 	if err != nil {
 		return err
@@ -322,7 +388,7 @@ func client_many_streams() error {
 }
 
 func client() error {
-	gst_pipe, err := gst.NewPipeline("appsrc ! \"application/x-rtp, media=(string)video, clock-rate=(int)90000, encoding-name=(string)H264, payload=(int)96\" ! rtpjitterbuffer ! rtph264depay ! decodebin ! videoconvert ! autovideosink sync=false ")
+	gst_pipe, err := gst.NewPipeline(client_pipe)
 
 	tlsConf := &tls.Config{
 		InsecureSkipVerify: true,
