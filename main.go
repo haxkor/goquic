@@ -27,11 +27,20 @@ import (
 )
 
 // mtu=1300
-const client_pipe = "appsrc ! application/x-rtp, media=(string)video, clock-rate=(int)90000, encoding-name=(string)H264, payload=(int)96 ! rtpjitterbuffer ! rtph264depay ! decodebin ! videoconvert ! autovideosink sync=false "
-const server_pipe = "videotestsrc ! x264enc tune=zerolatency bitrate=500 speed-preset=superfast ! rtph264pay  seqnum-offset=100 ! appsink name=appsink"
+// og
+// const client_pipe = "appsrc ! application/x-rtp, media=(string)video, clock-rate=(int)90000, encoding-name=(string)H264, payload=(int)96 ! rtpjitterbuffer ! rtph264depay ! decodebin ! videoconvert ! autovideosink sync=false "
 
-// const client_pipe = "appsrc name=src ! multipartdemux ! jpegdec ! autovideosink"
-// const server_pipe = "videotestsrc ! queue ! videoconvert ! jpegenc ! multipartmux ! appsink name=appsink"
+// identity
+// const client_pipe = "appsrc name=src ! application/x-rtp, media=(string)video, clock-rate=(int)90000, encoding-name=(string)H264, payload=(int)96 ! identity dump=true ! rtpjitterbuffer ! rtph264depay ! decodebin ! videoconvert ! autovideosink sync=false "
+
+// filesink
+// const client_pipe = "appsrc ! application/x-rtp, media=(string)video, clock-rate=(int)90000, encoding-name=(string)H264, payload=(int)96 ! rtpjitterbuffer ! rtph264depay ! decodebin ! videoconvert ! filesink location=filesink "
+
+// const server_pipe = "videotestsrc ! x264enc tune=zerolatency bitrate=500 speed-preset=superfast ! rtph264pay  seqnum-offset=100 ! appsink name=appsink"
+
+// aus moq app
+const client_pipe = "appsrc name=src ! identity dump=true ! multipartdemux ! jpegdec ! autovideosink"
+const server_pipe = "videotestsrc ! queue ! videoconvert ! jpegenc ! multipartmux ! appsink name=appsink"
 
 const addr = "localhost:4542"
 
@@ -57,11 +66,14 @@ func (logger *RTP_logger) log_part(buf []byte) error {
 	packet := rtp.Packet{}
 	err := packet.Unmarshal(buf)
 	if err != nil {
+		log.Printf("not a full packet yet")
+		log.Printf(err.Error())
+		return nil
 		panic(err)
 	} else {
 		logger.accumulator = make([]byte, 0) // seq nrs were also parsed without this line
 	}
-	log.Printf("seq nr: %d", packet.SequenceNumber)
+	log.Printf("seq nr: %d len: %d", packet.SequenceNumber, len(packet.Payload))
 	log.Printf("lenght of acc: %d", len(logger.accumulator))
 	return nil
 }
@@ -267,6 +279,9 @@ func client_datagrams() error {
 			log.Fatal(err)
 		}
 		log.Printf("Creating qlog file %s.\n", filename)
+		// here we need to put a WriteCloser the RTP_logger can write to, too
+		// could there be any race conditions (probably not)
+		// could there be reorderings of writes by QUIC / RTP_Logger? that would be bad
 		return qlog.NewConnectionTracer(NewBufferedWriteCloser(bufio.NewWriter(f), f), p, connID)
 	}
 
@@ -361,17 +376,22 @@ func client_many_streams() error {
 					log.Printf("error on read: %v", err)
 					gst_pipe.SendEOS()
 				}
+				packet := rtp.Packet{}
+				err = packet.Unmarshal(buf)
+				log.Printf("client RTP packet nr: %d", packet.SequenceNumber)
+
 				err = stream.Close()
 				if err != nil {
 					panic(err)
 				}
 
 				log.Printf("writing %v bytes from stream to pipeline", n)
-				_, err = gst_pipe.Write(buf[:n])
+				n, err = gst_pipe.Write(buf[:n])
 				if err != nil {
 					log.Printf("error on write: %v", err)
 					gst_pipe.SendEOS()
 				}
+				log.Printf("wrote %d bytes to the client pipeline", n)
 
 			} else if id == 10 {
 				go receive_big_file(stream)
