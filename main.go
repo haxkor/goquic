@@ -13,6 +13,8 @@ import (
 	"io"
 	"log"
 	"math/big"
+
+	//	"math/rand"
 	"os"
 	"time"
 
@@ -22,25 +24,18 @@ import (
 	"github.com/quic-go/quic-go/quicvarint"
 
 	"github.com/mengelbart/gst-go"
+	"github.com/mengelbart/pace"
 
 	"github.com/pion/rtp"
 )
 
 // mtu=1300
-// og
-// const client_pipe = "appsrc ! application/x-rtp, media=(string)video, clock-rate=(int)90000, encoding-name=(string)H264, payload=(int)96 ! rtpjitterbuffer ! rtph264depay ! decodebin ! videoconvert ! autovideosink sync=false "
+const client_pipe = "appsrc name=src ! application/x-rtp, media=(string)video, clock-rate=(int)90000, encoding-name=(string)H264, payload=(int)96 ! rtpjitterbuffer ! rtph264depay ! decodebin ! videoconvert ! autovideosink sync=false "
 
 // identity
 // const client_pipe = "appsrc name=src ! application/x-rtp, media=(string)video, clock-rate=(int)90000, encoding-name=(string)H264, payload=(int)96 ! identity dump=true ! rtpjitterbuffer ! rtph264depay ! decodebin ! videoconvert ! autovideosink sync=false "
 
-// filesink
-// const client_pipe = "appsrc ! application/x-rtp, media=(string)video, clock-rate=(int)90000, encoding-name=(string)H264, payload=(int)96 ! rtpjitterbuffer ! rtph264depay ! decodebin ! videoconvert ! filesink location=filesink "
-
-// const server_pipe = "videotestsrc ! x264enc tune=zerolatency bitrate=500 speed-preset=superfast ! rtph264pay  seqnum-offset=100 ! appsink name=appsink"
-
-// aus moq app
-const client_pipe = "appsrc name=src ! identity dump=true ! multipartdemux ! jpegdec ! autovideosink"
-const server_pipe = "videotestsrc ! queue ! videoconvert ! jpegenc ! multipartmux ! appsink name=appsink"
+const server_pipe = "videotestsrc ! x264enc tune=zerolatency bitrate=500 speed-preset=superfast ! rtph264pay  seqnum-offset=100 ! appsink name=appsink"
 
 const addr = "localhost:4542"
 
@@ -56,7 +51,19 @@ type pkt struct {
 
 // class that accumulates the bytes and logs once the parse method doesnt fail, then clears buffer
 type RTP_logger struct {
-	accumulator []byte
+	accumulator     []byte
+	log_file_writer *bufio.Writer
+}
+
+func new_RTP_logger(logname string) *RTP_logger {
+	f, err := os.Create(log_output_path + logname + ".rtplog")
+	if err != nil {
+		panic(err)
+	}
+	writer := bufio.NewWriter(f)
+
+	result := RTP_logger{make([]byte, 0), writer} //why is this not a pointer?
+	return &result
 }
 
 func (logger *RTP_logger) log_part(buf []byte) error {
@@ -75,6 +82,11 @@ func (logger *RTP_logger) log_part(buf []byte) error {
 	}
 	log.Printf("seq nr: %d len: %d", packet.SequenceNumber, len(packet.Payload))
 	log.Printf("lenght of acc: %d", len(logger.accumulator))
+	logger.log_file_writer.Flush()
+	_, err = fmt.Fprintf(logger.log_file_writer, "{\"seq\": %d, \"ts\": %d}\n", packet.SequenceNumber, time.Now().UnixMilli())
+	if err != nil {
+		panic(err)
+	}
 	return nil
 }
 
@@ -115,7 +127,8 @@ func count_use_constants() int {
 	return sum
 }
 
-var log_output_path = flag.String("output", "", "where to save the qlog")
+var log_output_path string
+var server_ip = flag.String("server_ip", "localhost", "at what address is the server created")
 
 func main() {
 	if count_use_constants() != 1 {
@@ -123,16 +136,11 @@ func main() {
 	}
 	fmt.Println("kek")
 
-	if false {
-		w_desc, err := os.Create("/home/jasper/mymount/createdimalive")
-		if err != nil {
-			panic("failed to create im alive file")
-		}
-		defer w_desc.Close()
-		w_desc.Write([]byte("aa"))
-	}
 	isServer := flag.Bool("server", false, "server")
+	output_path_arg := flag.String("output", "", "where to save the qlog")
 	flag.Parse()
+
+	log_output_path = *output_path_arg + "/" + time.Now().Format("2006-01-02-15:04:05")
 
 	gst.GstInit()
 	defer gst.GstDeinit()
@@ -170,7 +178,7 @@ func server() error {
 	}
 
 	conf.Tracer = func(ctx context.Context, p logging.Perspective, connID quic.ConnectionID) *logging.ConnectionTracer {
-		filename := fmt.Sprintf("%s/server_%x.qlog", *log_output_path, connID)
+		filename := fmt.Sprintf("%sserver.qlog", log_output_path)
 		f, err := os.Create(filename)
 		if err != nil {
 			log.Fatal(err)
@@ -179,7 +187,7 @@ func server() error {
 		return qlog.NewConnectionTracer(NewBufferedWriteCloser(bufio.NewWriter(f), f), p, connID)
 	}
 
-	listener, err := quic.ListenAddr(addr, generateTLSConfig(), conf)
+	listener, err := quic.ListenAddr(*server_ip+":4242", generateTLSConfig(), conf)
 	if err != nil {
 		return err
 	}
@@ -204,7 +212,7 @@ func server() error {
 		gst_pipe.Start()
 	} else if USE_MANY_STREAMS {
 		var streams_count int = 0
-		rtp_logger := RTP_logger{}
+		rtp_logger := new_RTP_logger("server_manystreams")
 		gst_pipe.SetBufferHandler(func(buf gst.Buffer) {
 			stream, err := conn.AcceptStream(context.Background())
 			conn.SendMessage(buf.Bytes)
@@ -237,14 +245,32 @@ func server() error {
 		payload = quicvarint.Append(payload, 10)
 		stream.Write(payload)
 
-		r_desc, err := os.Open("trolol")
-		if err != nil {
-			panic(err)
-		}
-		defer r_desc.Close()
+		if false {
+			r_desc, err := os.Open("trolol")
+			if err != nil {
+				panic(err)
+			}
+			defer r_desc.Close()
 
-		io.Copy(stream, r_desc)
-		stream.Close()
+			io.Copy(stream, r_desc)
+			stream.Close()
+		} else {
+			limited_writer := pace.NewWriter(stream)
+			limited_writer.SetRateLimit(1_000_000/9, 4)
+
+			i := 0
+			for i < 0x1002 {
+				buf := make([]byte, 0x1000)
+				rand.Read(buf)
+				_, err := limited_writer.Write(buf)
+				if err != nil {
+					panic(err)
+				}
+
+				i += 1
+			}
+			stream.Close()
+		}
 
 	} else if USE_DATAGRAMS {
 		gst_pipe.SetBufferHandler(func(buf gst.Buffer) {
@@ -273,7 +299,7 @@ func client_datagrams() error {
 		EnableDatagrams: true,
 	}
 	conf.Tracer = func(ctx context.Context, p logging.Perspective, connID quic.ConnectionID) *logging.ConnectionTracer {
-		filename := fmt.Sprintf("%s/server_%x.qlog", *log_output_path, connID)
+		filename := fmt.Sprintf("%s/server.qlog", log_output_path)
 		f, err := os.Create(filename)
 		if err != nil {
 			log.Fatal(err)
@@ -285,7 +311,7 @@ func client_datagrams() error {
 		return qlog.NewConnectionTracer(NewBufferedWriteCloser(bufio.NewWriter(f), f), p, connID)
 	}
 
-	conn, err := quic.DialAddr(context.Background(), addr, tlsConf, conf)
+	conn, err := quic.DialAddr(context.Background(), *server_ip+":4242", tlsConf, conf)
 	if err != nil {
 		return err
 	}
@@ -329,6 +355,7 @@ func receive_big_file(stream quic.Stream) error {
 
 func client_many_streams() error {
 	gst_pipe, err := gst.NewPipeline(client_pipe)
+	gst_pipe.Start()
 
 	tlsConf := &tls.Config{
 		InsecureSkipVerify: true,
@@ -339,7 +366,7 @@ func client_many_streams() error {
 		MaxIdleTimeout: 99999 * time.Second,
 	}
 	conf.Tracer = func(ctx context.Context, p logging.Perspective, connID quic.ConnectionID) *logging.ConnectionTracer {
-		filename := fmt.Sprintf("%s/client_%x.qlog", *log_output_path, connID)
+		filename := fmt.Sprintf("%sclient.qlog", log_output_path)
 		f, err := os.Create(filename)
 		if err != nil {
 			log.Fatal(err)
@@ -348,10 +375,12 @@ func client_many_streams() error {
 		return qlog.NewConnectionTracer(NewBufferedWriteCloser(bufio.NewWriter(f), f), p, connID)
 	}
 
-	conn, err := quic.DialAddr(context.Background(), addr, tlsConf, conf)
+	conn, err := quic.DialAddr(context.Background(), *server_ip+":4242", tlsConf, conf)
 	if err != nil {
 		return err
 	}
+
+	rtp_logger := new_RTP_logger("client_manystreams")
 
 	go func() {
 		for {
@@ -371,15 +400,12 @@ func client_many_streams() error {
 				pkt, err := read_pkt(stream)
 				buf := pkt.buffer
 				n := len(buf)
+				rtp_logger.log_part(buf)
 
 				if err != nil && err.Error() != "EOF" {
 					log.Printf("error on read: %v", err)
 					gst_pipe.SendEOS()
 				}
-				packet := rtp.Packet{}
-				err = packet.Unmarshal(buf)
-				log.Printf("client RTP packet nr: %d", packet.SequenceNumber)
-
 				err = stream.Close()
 				if err != nil {
 					panic(err)
@@ -414,7 +440,7 @@ func client() error {
 		InsecureSkipVerify: true,
 		NextProtos:         []string{"quic-echo-example"},
 	}
-	conn, err := quic.DialAddr(context.Background(), addr, tlsConf, nil)
+	conn, err := quic.DialAddr(context.Background(), *server_ip+":4242", tlsConf, nil)
 	if err != nil {
 		return err
 	}
@@ -472,4 +498,24 @@ func generateTLSConfig() *tls.Config {
 		Certificates: []tls.Certificate{tlsCert},
 		NextProtos:   []string{"quic-echo-example"},
 	}
+}
+
+type bufferedWriteCloser struct {
+	*bufio.Writer
+	io.Closer
+}
+
+// NewBufferedWriteCloser creates an io.WriteCloser from a bufio.Writer and an io.Closer
+func NewBufferedWriteCloser(writer *bufio.Writer, closer io.Closer) io.WriteCloser {
+	return &bufferedWriteCloser{
+		Writer: writer,
+		Closer: closer,
+	}
+}
+
+func (h bufferedWriteCloser) Close() error {
+	if err := h.Writer.Flush(); err != nil {
+		return err
+	}
+	return h.Closer.Close()
 }

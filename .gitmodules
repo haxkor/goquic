@@ -1,0 +1,3 @@
+[submodule "pace"]
+	path = pace
+	url = https://github.com/mengelbart/pace
