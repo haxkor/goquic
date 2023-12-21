@@ -220,10 +220,8 @@ func server() error {
 			if err != nil {
 				panic(err)
 			}
-			//n, err := stream.Write(buf.Bytes)
 			n, err := write_pkt(stream, buf.Bytes)
 			log.Printf("server wrote %d bytes to new stream, count = %d", n, streams_count)
-			// log_rtp_packet(buf.Bytes) # this crashes, because too little bytes
 			rtp_logger.log_part(buf.Bytes)
 
 			log.Printf("still in MANY_STREAMS")
@@ -245,32 +243,18 @@ func server() error {
 		payload = quicvarint.Append(payload, 10)
 		stream.Write(payload)
 
-		if false {
-			r_desc, err := os.Open("trolol")
+		limited_writer := pace.NewWriter(stream)
+		limited_writer.SetRateLimit(1_000_000/4, 400)
+
+		for {
+			buf := make([]byte, 0x100)
+			rand.Read(buf)
+			_, err := limited_writer.Write(buf)
 			if err != nil {
 				panic(err)
 			}
-			defer r_desc.Close()
-
-			io.Copy(stream, r_desc)
-			stream.Close()
-		} else {
-			limited_writer := pace.NewWriter(stream)
-			limited_writer.SetRateLimit(1_000_000/9, 4)
-
-			i := 0
-			for i < 0x1002 {
-				buf := make([]byte, 0x1000)
-				rand.Read(buf)
-				_, err := limited_writer.Write(buf)
-				if err != nil {
-					panic(err)
-				}
-
-				i += 1
-			}
-			stream.Close()
 		}
+		stream.Close()
 
 	} else if USE_DATAGRAMS {
 		gst_pipe.SetBufferHandler(func(buf gst.Buffer) {
@@ -338,19 +322,16 @@ func client_datagrams() error {
 	return nil
 }
 
-func receive_big_file(stream quic.Stream) error {
-	fmt.Println("receiving big file")
-	w_desc, err := os.Create("trolol.copy")
-	if err != nil {
-		return err
+func receive_random_bytes(stream quic.Stream) error {
+	for {
+		buf := make([]byte, 10000)
+		n, err := stream.Read(buf)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Printf("received %d randombytes\n", n)
 	}
-	defer w_desc.Close()
-
-	_, err = io.Copy(w_desc, stream)
-	stream.Close()
-
-	// panic("trolol has been written")
-	return err
+	return nil
 }
 
 func client_many_streams() error {
@@ -420,7 +401,7 @@ func client_many_streams() error {
 				log.Printf("wrote %d bytes to the client pipeline", n)
 
 			} else if id == 10 {
-				go receive_big_file(stream)
+				go receive_random_bytes(stream)
 			} else {
 				panic("got unknown id")
 			}
