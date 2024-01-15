@@ -8,7 +8,6 @@ import matplotlib.pyplot as plt
 import pandas
 
 from rtp import *
-
 logging.basicConfig(level="INFO")
 logger = logging.getLogger()
 
@@ -40,7 +39,8 @@ logger.info("using files of run %s", ts)
 
 def get_specific_log(regex):
     matching_logs = [entry for entry in run_files if re.match(regex, entry.name)]
-    assert len(matching_logs) == 1
+    assert len(matching_logs) == 1, "matching: %s" % matching_logs
+
     return matching_logs[0]
 
 
