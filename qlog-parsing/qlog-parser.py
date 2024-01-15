@@ -70,4 +70,17 @@ def pandas_plot(df):
     plt.show()
 
 
-pandas_plot(arrive_delta_df)
+#pandas_plot(arrive_delta_df)
+
+
+
+client_qlog = get_specific_log(r".*client.*qlog")
+server_qlog = get_specific_log(r".*server.*qlog")
+
+from qlog import *
+
+run = qlog_run(server_qlog, client_qlog)
+pandas_plot(run.bitrate_df())
+
+
+
