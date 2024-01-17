@@ -2,6 +2,8 @@ module trolol
 
 go 1.20
 
+replace github.com/quic-go/quic-go => ../quic-go
+
 require (
 	github.com/mengelbart/gst-go v0.0.4
 	github.com/mengelbart/pace v0.0.0-20231129123444-a1e111de51c7
