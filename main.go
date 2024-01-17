@@ -233,7 +233,8 @@ func server() error {
 		gst_pipe.Start()
 
 		time.Sleep(4 * time.Second)
-		stream, err := conn.AcceptStream(context.Background())
+		// stream, err := conn.AcceptStream(context.Background())
+		stream, err := conn.OpenUniStreamSync(context.Background())
 
 		if err != nil {
 			panic(err)
@@ -244,7 +245,7 @@ func server() error {
 		stream.Write(payload)
 
 		limited_writer := pace.NewWriter(stream)
-		limited_writer.SetRateLimit(1_000_000/4, 400)
+		limited_writer.SetRateLimit(1_000_000/2, 400)
 
 		for {
 			buf := make([]byte, 0x100)
@@ -322,7 +323,7 @@ func client_datagrams() error {
 	return nil
 }
 
-func receive_random_bytes(stream quic.Stream) error {
+func receive_random_bytes(stream quic.ReceiveStream) error {
 	for {
 		buf := make([]byte, 10000)
 		n, err := stream.Read(buf)
@@ -407,6 +408,18 @@ func client_many_streams() error {
 			}
 		}
 	}()
+
+	stream, err := conn.AcceptUniStream(context.Background())
+	fmt.Print("client accepted Uni stream")
+	if err != nil {
+		panic(err)
+	}
+	log.Println("reading from track")
+	go receive_random_bytes(stream)
+
+	varintReader := quicvarint.NewReader(stream)
+	id, err := quicvarint.Read(varintReader)
+	log.Printf("read pkt id: %d", id)
 
 	ml := gst.NewMainLoop()
 	ml.Run()
