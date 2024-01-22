@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import pandas
 
 from rtp import *
+from qlog import *
 logging.basicConfig(level="INFO")
 logger = logging.getLogger()
 
@@ -58,29 +59,20 @@ arrive_delta_df = pandas.DataFrame.from_dict(
 )
 
 distances_frames_sent = make_delays(server_dict)
-sent_df = pandas.DataFrame.from_dict(
+sent_delta_df = pandas.DataFrame.from_dict(
     distances_frames_sent,
     orient="index",
     columns=["ts", "delay_to_sending_next_packet"],
 )
-
-
-def pandas_plot(df):
-    df.plot("ts")
-    plt.show()
-
-
-#pandas_plot(arrive_delta_df)
-
-
+arrive_delta_df.plot("ts")
 
 client_qlog = get_specific_log(r".*client.*qlog")
 server_qlog = get_specific_log(r".*server.*qlog")
-
-from qlog import *
-
 run = qlog_run(server_qlog, client_qlog)
-pandas_plot(run.bitrate_df())
+
+
+run.bitrate_df().plot("ts")
+plt.show()
 
 
 
