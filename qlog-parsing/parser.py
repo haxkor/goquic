@@ -64,7 +64,7 @@ sent_delta_df = pandas.DataFrame.from_dict(
     orient="index",
     columns=["ts", "delay_to_sending_next_packet"],
 )
-arrive_delta_df.plot("ts")
+# arrive_delta_df.plot("ts")
 
 client_qlog = get_specific_log(r".*client.*qlog")
 server_qlog = get_specific_log(r".*server.*qlog")
