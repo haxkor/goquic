@@ -226,7 +226,7 @@ func server() error {
 		rtp_logger := new_RTP_logger("server_manystreams")
 		gst_pipe.SetBufferHandler(func(buf gst.Buffer) {
 			stream, err := conn.AcceptStream(context.Background())
-			conn.SendMessage(buf.Bytes)
+			conn.SendDatagram(buf.Bytes)
 			streams_count += 1
 			if err != nil {
 				panic(err)
@@ -274,7 +274,7 @@ func server() error {
 				panic("gstreamer package too big")
 			}
 			log.Printf("sending message of length %v", len(buf.Bytes))
-			conn.SendMessage(buf.Bytes)
+			conn.SendDatagram(buf.Bytes)
 
 		})
 		gst_pipe.Start()
