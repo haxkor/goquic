@@ -22,6 +22,7 @@ import (
 	"github.com/quic-go/quic-go/logging"
 	"github.com/quic-go/quic-go/qlog"
 	"github.com/quic-go/quic-go/quicvarint"
+	"github.com/quic-go/quic-go/streamtypebalancer"
 
 	"github.com/mengelbart/gst-go"
 	"github.com/mengelbart/pace"
@@ -42,6 +43,8 @@ const addr = "localhost:4542"
 const USE_ONE_STREAM bool = false
 const USE_MANY_STREAMS bool = true
 const USE_DATAGRAMS bool = false
+
+const USE_BALANCER bool = false
 
 type pkt struct {
 	flowID uint64
@@ -169,23 +172,31 @@ func server() error {
 	if err != nil {
 		panic(err)
 	}
-	//tracer := quiclogging.Tracer
-	//tracer := logging.Tracer{}
 	conf := &quic.Config{
 		MaxIncomingStreams: 1 << 60,
 		MaxIdleTimeout:     99999 * time.Second,
-		//Tracer:             tracer,
 	}
 
+	if USE_BALANCER {
 	conf.Tracer = func(ctx context.Context, p logging.Perspective, connID quic.ConnectionID) *logging.ConnectionTracer {
-		filename := fmt.Sprintf("%sserver.qlog", log_output_path)
-		f, err := os.Create(filename)
-		if err != nil {
-			log.Fatal(err)
+			return streamtypebalancer.MyNewTracer()
 		}
-		log.Printf("Creating qlog file %s.\n", filename)
-		return qlog.NewConnectionTracer(NewBufferedWriteCloser(bufio.NewWriter(f), f), p, connID)
+	} else {
+		conf.Tracer = qlog.DefaultTracer
 	}
+	// conf.Tracer = func(ctx context.Context, p logging.Perspective, connID quic.ConnectionID) *logging.ConnectionTracer {
+	// 	if USE_BALANCER {
+	// 		return streamtypebalancer.MyNewTracer()
+	// 	} else {
+	// 		filename := fmt.Sprintf("%sserver.qlog", log_output_path)
+	// 		f, err := os.Create(filename)
+	// 		if err != nil {
+	// 			log.Fatal(err)
+	// 		}
+	// 		log.Printf("Creating qlog file %s.\n", filename)
+	// 		return qlog.NewConnectionTracer(NewBufferedWriteCloser(bufio.NewWriter(f), f), p, connID)
+	// 	}
+	// }
 
 	listener, err := quic.ListenAddr(*server_ip+":4242", generateTLSConfig(), conf)
 	if err != nil {
@@ -290,9 +301,6 @@ func client_datagrams() error {
 			log.Fatal(err)
 		}
 		log.Printf("Creating qlog file %s.\n", filename)
-		// here we need to put a WriteCloser the RTP_logger can write to, too
-		// could there be any race conditions (probably not)
-		// could there be reorderings of writes by QUIC / RTP_Logger? that would be bad
 		return qlog.NewConnectionTracer(NewBufferedWriteCloser(bufio.NewWriter(f), f), p, connID)
 	}
 
@@ -348,13 +356,18 @@ func client_many_streams() error {
 		MaxIdleTimeout: 99999 * time.Second,
 	}
 	conf.Tracer = func(ctx context.Context, p logging.Perspective, connID quic.ConnectionID) *logging.ConnectionTracer {
+		if USE_BALANCER {
+			return streamtypebalancer.MyNewTracer()
+		} else {
 		filename := fmt.Sprintf("%sclient.qlog", log_output_path)
 		f, err := os.Create(filename)
 		if err != nil {
 			log.Fatal(err)
 		}
 		log.Printf("Creating qlog file %s.\n", filename)
+			bufio.NewWriter(f)
 		return qlog.NewConnectionTracer(NewBufferedWriteCloser(bufio.NewWriter(f), f), p, connID)
+		}
 	}
 
 	conn, err := quic.DialAddr(context.Background(), *server_ip+":4242", tlsConf, conf)
