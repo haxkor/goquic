@@ -311,7 +311,7 @@ func client_datagrams() error {
 	go func() {
 		for {
 			log.Println("reading datagram")
-			buf, err := conn.ReceiveMessage(context.TODO())
+			buf, err := conn.ReceiveDatagram(context.TODO())
 			if err != nil {
 				log.Printf("error on receiving message: %v", err)
 				gst_pipe.SendEOS()
