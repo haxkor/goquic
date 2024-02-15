@@ -36,7 +36,8 @@ const client_pipe = "appsrc name=src ! application/x-rtp, media=(string)video, c
 // identity
 // const client_pipe = "appsrc name=src ! application/x-rtp, media=(string)video, clock-rate=(int)90000, encoding-name=(string)H264, payload=(int)96 ! identity dump=true ! rtpjitterbuffer ! rtph264depay ! decodebin ! videoconvert ! autovideosink sync=false "
 
-const server_pipe = "videotestsrc ! x264enc tune=zerolatency bitrate=500 speed-preset=superfast ! rtph264pay  seqnum-offset=100 ! appsink name=appsink"
+// const server_pipe = "videotestsrc ! x264enc tune=zerolatency bitrate=500 speed-preset=superfast ! rtph264pay  seqnum-offset=100 ! appsink name=appsink"
+const server_pipe = "videotestsrc is-live=true ! video/x-raw,width=720,height=720,framerate=30/1 ! clocksync ! x264enc tune=zerolatency bitrate=800 speed-preset=superfast ! rtph264pay  seqnum-offset=100 ! appsink name=appsink"
 
 const addr = "localhost:4542"
 
@@ -178,7 +179,7 @@ func server() error {
 	}
 
 	if USE_BALANCER {
-	conf.Tracer = func(ctx context.Context, p logging.Perspective, connID quic.ConnectionID) *logging.ConnectionTracer {
+		conf.Tracer = func(ctx context.Context, p logging.Perspective, connID quic.ConnectionID) *logging.ConnectionTracer {
 			return streamtypebalancer.MyNewTracer()
 		}
 	} else {
@@ -243,7 +244,7 @@ func server() error {
 		})
 		gst_pipe.Start()
 
-		time.Sleep(4 * time.Second)
+		time.Sleep(10 * time.Second)
 		// stream, err := conn.AcceptStream(context.Background())
 		stream, err := conn.OpenUniStreamSync(context.Background())
 
@@ -359,14 +360,14 @@ func client_many_streams() error {
 		if USE_BALANCER {
 			return streamtypebalancer.MyNewTracer()
 		} else {
-		filename := fmt.Sprintf("%sclient.qlog", log_output_path)
-		f, err := os.Create(filename)
-		if err != nil {
-			log.Fatal(err)
-		}
-		log.Printf("Creating qlog file %s.\n", filename)
+			filename := fmt.Sprintf("%sclient.qlog", log_output_path)
+			f, err := os.Create(filename)
+			if err != nil {
+				log.Fatal(err)
+			}
+			log.Printf("Creating qlog file %s.\n", filename)
 			bufio.NewWriter(f)
-		return qlog.NewConnectionTracer(NewBufferedWriteCloser(bufio.NewWriter(f), f), p, connID)
+			return qlog.NewConnectionTracer(NewBufferedWriteCloser(bufio.NewWriter(f), f), p, connID)
 		}
 	}
 
