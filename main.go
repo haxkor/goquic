@@ -24,6 +24,8 @@ import (
 	"github.com/quic-go/quic-go/quicvarint"
 	"github.com/quic-go/quic-go/streamtypebalancer"
 
+	//"github.com/quic-go/quic-go/streamtypebalancer"
+
 	"github.com/mengelbart/gst-go"
 	"github.com/mengelbart/pace"
 
@@ -45,7 +47,7 @@ const USE_ONE_STREAM bool = false
 const USE_MANY_STREAMS bool = true
 const USE_DATAGRAMS bool = false
 
-const USE_BALANCER bool = false
+const USE_BALANCER bool = true
 
 type pkt struct {
 	flowID uint64
@@ -179,9 +181,11 @@ func server() error {
 	}
 
 	if USE_BALANCER {
-		conf.Tracer = func(ctx context.Context, p logging.Perspective, connID quic.ConnectionID) *logging.ConnectionTracer {
-			return streamtypebalancer.MyNewTracer()
-		}
+		// conf.Tracer = func(ctx context.Context, p logging.Perspective, connID quic.ConnectionID) *logging.ConnectionTracer {
+		// 	return streamtypebalancer.MyNewTracer()
+		// }
+		// conf.Tracer = streamtypebalancer.FunctionForBalancerAndTracer
+		conf.Tracer_and_Balancer = streamtypebalancer.FunctionForBalancerAndTracer
 	} else {
 		conf.Tracer = qlog.DefaultTracer
 	}
@@ -356,20 +360,24 @@ func client_many_streams() error {
 	conf := &quic.Config{
 		MaxIdleTimeout: 99999 * time.Second,
 	}
-	conf.Tracer = func(ctx context.Context, p logging.Perspective, connID quic.ConnectionID) *logging.ConnectionTracer {
-		if USE_BALANCER {
-			return streamtypebalancer.MyNewTracer()
-		} else {
-			filename := fmt.Sprintf("%sclient.qlog", log_output_path)
-			f, err := os.Create(filename)
-			if err != nil {
-				log.Fatal(err)
-			}
-			log.Printf("Creating qlog file %s.\n", filename)
-			bufio.NewWriter(f)
-			return qlog.NewConnectionTracer(NewBufferedWriteCloser(bufio.NewWriter(f), f), p, connID)
-		}
-	}
+	// conf.Tracer = func(ctx context.Context, p logging.Perspective, connID quic.ConnectionID) *logging.ConnectionTracer {
+	// 	if USE_BALANCER {
+	// 		//return streamtypebalancer.MyNewTracer()
+	// 		return nil
+	// 	} else {
+	// 		filename := fmt.Sprintf("%sclient.qlog", log_output_path)
+	// 		f, err := os.Create(filename)
+	// 		if err != nil {
+	// 			log.Fatal(err)
+	// 		}
+	// 		log.Printf("Creating qlog file %s.\n", filename)
+	// 		bufio.NewWriter(f)
+	// 		return qlog.NewConnectionTracer(NewBufferedWriteCloser(bufio.NewWriter(f), f), p, connID)
+	// 	}
+	// }
+
+	//conf.Tracer_and_Balancer = streamtypebalancer.FunctionForBalancerAndTracer
+	conf.Tracer = qlog.DefaultTracer
 
 	conn, err := quic.DialAddr(context.Background(), *server_ip+":4242", tlsConf, conf)
 	if err != nil {

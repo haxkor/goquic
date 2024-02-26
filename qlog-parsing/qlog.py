@@ -101,3 +101,24 @@ class qlog_run:
         )
 
         return bitrate_df
+
+
+    def distance_between_bidiframes(self):
+        timestamps = list()
+        last = 0
+        for log_entry in self.server_log:
+            if log_entry.get("name") != "transport:UpdateLastBidiFrame":
+                continue
+            ts = log_entry.get("time") / 1000
+            timestamps.append( ts -last)
+            last = ts
+
+        return timestamps
+
+
+
+def avg(l):
+    return sum(l) / len(l)
+
+
+

@@ -5,21 +5,26 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Launch",
-            "type": "go",
-            "program": "/home/jasper/Documents/ma_quic/goquic/trolol",
-            "mode":"test",
-            "args":["server",  "-output=output/"],
-
-        },
-        {
-            "name": "2Launch",
+            "name": "server",
             "type": "go",
             "request": "launch",
             "mode": "auto",
             "program": "/Users/jasperruhl/Documents/ma_quic/goquic/main.go",
-            "env": {},
+            "env": {
+                "QLOGDIR":"/Users/jasperruhl/Documents/ma_quic/goquic/output"
+            },
             "args": ["-server", "-output=output/"]
+        },
+        {
+            "name": "client",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "/Users/jasperruhl/Documents/ma_quic/goquic/main.go",
+            "env": {
+                "QLOGDIR":"/Users/jasperruhl/Documents/ma_quic/goquic/output"
+            },
+            "args": ["-output=output/"]
         }
     ]
 }
