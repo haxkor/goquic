@@ -32,14 +32,16 @@ import (
 	"github.com/pion/rtp"
 )
 
-// mtu=1300
-const client_pipe = "appsrc name=src ! application/x-rtp, media=(string)video, clock-rate=(int)90000, encoding-name=(string)H264, payload=(int)96 ! rtpjitterbuffer ! rtph264depay ! decodebin ! videoconvert ! autovideosink sync=false "
+// const client_pipe = "appsrc name=src ! application/x-rtp, media=(string)video, clock-rate=(int)90000, encoding-name=(string)H264, payload=(int)96 ! rtpjitterbuffer ! rtph264depay ! decodebin ! videoconvert ! autovideosink sync=false "
+// const server_pipe = "videotestsrc is-live=true ! video/x-raw,width=720,height=720,framerate=30/1 ! clocksync ! x264enc tune=zerolatency bitrate=800 speed-preset=superfast ! rtph264pay  seqnum-offset=100 ! appsink name=appsink"
 
-// identity
-// const client_pipe = "appsrc name=src ! application/x-rtp, media=(string)video, clock-rate=(int)90000, encoding-name=(string)H264, payload=(int)96 ! identity dump=true ! rtpjitterbuffer ! rtph264depay ! decodebin ! videoconvert ! autovideosink sync=false "
+//
 
-// const server_pipe = "videotestsrc ! x264enc tune=zerolatency bitrate=500 speed-preset=superfast ! rtph264pay  seqnum-offset=100 ! appsink name=appsink"
-const server_pipe = "videotestsrc is-live=true ! video/x-raw,width=720,height=720,framerate=30/1 ! clocksync ! x264enc tune=zerolatency bitrate=800 speed-preset=superfast ! rtph264pay  seqnum-offset=100 ! appsink name=appsink"
+// const client_pipe = "appsrc name=src ! application/x-rtp, media=(string)video, clock-rate=(int)90000, encoding-name=(string)VP8, payload=(int)96 ! rtpvp8depay ! vp8dec ! decodebin ! videoconvert ! autovideosink sync=false "
+// const server_pipe = "videotestsrc is-live=true ! video/x-raw,width=720,height=720,framerate=30/1 ! clocksync ! vp8enc ! appsink name=appsink"
+
+const server_pipe = "videotestsrc ! videoconvert ! vp8enc ! rtpvp8pay ! appsink name=appsink"
+const client_pipe = "appsrc name=src ! application/x-rtp,encoding-name=VP8,payload=96 ! rtpvp8depay ! vp8dec ! appsink name=appsink"
 
 const addr = "localhost:4542"
 
