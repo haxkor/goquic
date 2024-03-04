@@ -41,7 +41,7 @@ import (
 // const server_pipe = "videotestsrc is-live=true ! video/x-raw,width=720,height=720,framerate=30/1 ! clocksync ! vp8enc ! appsink name=appsink"
 
 const server_pipe = "videotestsrc ! videoconvert ! vp8enc ! rtpvp8pay ! appsink name=appsink"
-const client_pipe = "appsrc name=src ! application/x-rtp,encoding-name=VP8,payload=96 ! rtpvp8depay ! vp8dec ! appsink name=appsink"
+const client_pipe = "appsrc name=src ! application/x-rtp,encoding-name=VP8,payload=96 ! rtpvp8depay ! vp8dec ! autovideosink sync=false "
 
 const addr = "localhost:4542"
 
@@ -178,8 +178,13 @@ func server() error {
 		panic(err)
 	}
 	conf := &quic.Config{
-		MaxIncomingStreams: 1 << 60,
-		MaxIdleTimeout:     99999 * time.Second,
+		MaxIncomingStreams:             1 << 60, // this should be high in client
+		MaxIdleTimeout:                 99999 * time.Second,
+		MaxStreamReceiveWindow:         1 << 60,
+		MaxConnectionReceiveWindow:     1 << 60,
+		MaxIncomingUniStreams:          1 << 60,
+		InitialStreamReceiveWindow:     1 << 60,
+		InitialConnectionReceiveWindow: 1 << 60,
 	}
 
 	if USE_BALANCER {
@@ -360,7 +365,13 @@ func client_many_streams() error {
 	}
 
 	conf := &quic.Config{
-		MaxIdleTimeout: 99999 * time.Second,
+		MaxIdleTimeout:                 99999 * time.Second,
+		MaxIncomingStreams:             1 << 60, // this should be high in client
+		MaxStreamReceiveWindow:         1 << 60,
+		MaxConnectionReceiveWindow:     1 << 60,
+		MaxIncomingUniStreams:          1 << 60,
+		InitialStreamReceiveWindow:     1 << 60,
+		InitialConnectionReceiveWindow: 1 << 60,
 	}
 	// conf.Tracer = func(ctx context.Context, p logging.Perspective, connID quic.ConnectionID) *logging.ConnectionTracer {
 	// 	if USE_BALANCER {
