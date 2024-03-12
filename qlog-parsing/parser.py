@@ -38,15 +38,21 @@ ts, run_files = sorted(collected_per_name.items(), reverse=True)[args.mostrecent
 logger.info("using files of run %s", ts)
 
 
-def get_specific_log(regex):
+def get_specific_log(regex, run_files=run_files):
     matching_logs = [entry for entry in run_files if re.match(regex, entry.name)]
     assert len(matching_logs) == 1, "matching: %s" % matching_logs
 
     return matching_logs[0]
 
 
-client_rtp = get_specific_log(r".*client.*rtplog")
-server_rtp = get_specific_log(r".*server.*rtplog")
+try:
+    client_rtp = get_specific_log(r".*client.*rtplog")
+    server_rtp = get_specific_log(r".*server.*rtplog")
+except AssertionError:
+    ts, run_files = sorted(collected_per_name.items(), reverse=True)[args.mostrecent +1]
+    logger.warning("could not find appropriate rtplogs, trying with ts= %s", ts)
+    client_rtp = get_specific_log(r".*client.*rtplog", run_files)
+    server_rtp = get_specific_log(r".*server.*rtplog", run_files)
 
 # rtp sequence number -> timestamp
 client_dict = make_seq_to_timestamp(client_rtp)
