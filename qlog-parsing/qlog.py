@@ -7,11 +7,6 @@ import pandas
 logger = getLogger()
 
 
-def proxy_loads(line):
-    logger.debug("line: %s", line)
-    return json.loads(line)
-
-
 class qlog_run:
     server = ""
     client = ""
@@ -35,15 +30,17 @@ class qlog_run:
                         result.append(json.loads(line))
                     except json.decoder.JSONDecodeError:
                         return result
+            return result
 
         self.server_log = parse_single_log(self.server)
         self.client_log = parse_single_log(self.client)
-
+        logger.debug("parsed qlogs! self.server_log=%s", self.server_log)
+                
     def streams_transported(self):
         streamid_to_length = dict()
 
         for log_entry in self.server_log:
-            if log_entry.get("name") != "transport:packet_sent" :
+            if log_entry.get("name") != "transport:packet_sent":
                 continue
 
             if data := log_entry.get("data"):
@@ -56,9 +53,6 @@ class qlog_run:
 
         streamid_to_length.pop(None)
         return streamid_to_length
-
-
-
 
     def bitrate_df(self):
         ts_to_media_sent = dict()
@@ -83,7 +77,7 @@ class qlog_run:
                             else:
                                 if length := f.get("length"):
                                     ts_to_random_sent[key] += length
-                                logger.debug("non4 stream_id %s", stream_id)
+                                # logger.debug("non4 stream_id %s", stream_id)
 
                     if bytes_sent:
                         ts_to_media_sent[key] += bytes_sent
@@ -102,7 +96,6 @@ class qlog_run:
 
         return bitrate_df
 
-
     def distance_between_bidiframes(self):
         timestamps = list()
         last = 0
@@ -110,15 +103,40 @@ class qlog_run:
             if log_entry.get("name") != "transport:UpdateLastBidiFrame":
                 continue
             ts = log_entry.get("time") / 1000
-            timestamps.append( ts -last)
+            timestamps.append(ts - last)
             last = ts
 
         return timestamps
 
+    def cansendrequests(self):
+        ts_to_request_can = dict()
+        ts_to_request_cannot = dict()
+
+        for log_entry in self.server_log:
+            ts = int(log_entry["time"] / 1000)
+            ts_to_request_can.setdefault(ts, 0)
+            ts_to_request_cannot.setdefault(ts, 0)
+
+            if log_entry["name"] == "transport:CanSendUniFrame:":
+                if log_entry["data"]["details"] == "can send uniframe":
+                    ts_to_request_can[ts] += 1
+                elif log_entry["data"]["details"] == "cant send uniframe":
+                    ts_to_request_cannot[ts] += 1
+                else:
+                    raise NotImplementedError
+
+        combined_dict = {
+            ts: (ts, ts_to_request_can[ts], ts_to_request_cannot[ts])
+            for ts in ts_to_request_can.keys()
+        }
+
+        df = pandas.DataFrame.from_dict(
+            combined_dict,
+            orient="index",
+            columns=["ts", "can_send", "cannot_send"],
+        )
+        return df
 
 
 def avg(l):
     return sum(l) / len(l)
-
-
-
