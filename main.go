@@ -32,16 +32,14 @@ import (
 	"github.com/pion/rtp"
 )
 
-// const client_pipe = "appsrc name=src ! application/x-rtp, media=(string)video, clock-rate=(int)90000, encoding-name=(string)H264, payload=(int)96 ! rtpjitterbuffer ! rtph264depay ! decodebin ! videoconvert ! autovideosink sync=false "
-// const server_pipe = "videotestsrc is-live=true ! video/x-raw,width=720,height=720,framerate=30/1 ! clocksync ! x264enc tune=zerolatency bitrate=800 speed-preset=superfast ! rtph264pay  seqnum-offset=100 ! appsink name=appsink"
+// mtu=1300
+const client_pipe = "appsrc name=src ! application/x-rtp, media=(string)video, clock-rate=(int)90000, encoding-name=(string)H264, payload=(int)96 ! rtpjitterbuffer ! rtph264depay ! decodebin ! videoconvert ! autovideosink sync=false "
 
-//
+// identity
+// const client_pipe = "appsrc name=src ! application/x-rtp, media=(string)video, clock-rate=(int)90000, encoding-name=(string)H264, payload=(int)96 ! identity dump=true ! rtpjitterbuffer ! rtph264depay ! decodebin ! videoconvert ! autovideosink sync=false "
 
-// const client_pipe = "appsrc name=src ! application/x-rtp, media=(string)video, clock-rate=(int)90000, encoding-name=(string)VP8, payload=(int)96 ! rtpvp8depay ! vp8dec ! decodebin ! videoconvert ! autovideosink sync=false "
-// const server_pipe = "videotestsrc is-live=true ! video/x-raw,width=720,height=720,framerate=30/1 ! clocksync ! vp8enc ! appsink name=appsink"
-
-const server_pipe = "videotestsrc ! videoconvert ! vp8enc ! rtpvp8pay ! appsink name=appsink"
-const client_pipe = "appsrc name=src ! application/x-rtp,encoding-name=VP8,payload=96 ! rtpvp8depay ! vp8dec ! autovideosink sync=false "
+// const server_pipe = "videotestsrc ! x264enc tune=zerolatency bitrate=500 speed-preset=superfast ! rtph264pay  seqnum-offset=100 ! appsink name=appsink"
+const server_pipe_template = "filesrc location=%s ! decodebin ! x264enc tune=zerolatency bitrate=2000 speed-preset=superfast ! rtph264pay  seqnum-offset=100 ! appsink name=appsink"
 
 const addr = "localhost:4542"
 
@@ -137,6 +135,7 @@ func count_use_constants() int {
 
 var log_output_path string
 var server_ip = flag.String("server_ip", "localhost", "at what address is the server created")
+var server_pipe = ""
 
 func main() {
 	if count_use_constants() != 1 {
@@ -146,9 +145,12 @@ func main() {
 
 	isServer := flag.Bool("server", false, "server")
 	output_path_arg := flag.String("output", "", "where to save the qlog")
+	video_location := flag.String("video", "", "where is the video to send to client?")
 	flag.Parse()
 
 	log_output_path = *output_path_arg + "/" + time.Now().Format("2006-01-02-15:04:05")
+
+	server_pipe = fmt.Sprintf(server_pipe_template, *video_location)
 
 	gst.GstInit()
 	defer gst.GstDeinit()
@@ -178,13 +180,8 @@ func server() error {
 		panic(err)
 	}
 	conf := &quic.Config{
-		MaxIncomingStreams:             1 << 60, // this should be high in client
-		MaxIdleTimeout:                 99999 * time.Second,
-		MaxStreamReceiveWindow:         1 << 60,
-		MaxConnectionReceiveWindow:     1 << 60,
-		MaxIncomingUniStreams:          1 << 60,
-		InitialStreamReceiveWindow:     1 << 60,
-		InitialConnectionReceiveWindow: 1 << 60,
+		MaxIncomingStreams: 1 << 60,
+		MaxIdleTimeout:     99999 * time.Second,
 	}
 
 	if USE_BALANCER {
@@ -365,13 +362,7 @@ func client_many_streams() error {
 	}
 
 	conf := &quic.Config{
-		MaxIdleTimeout:                 99999 * time.Second,
-		MaxIncomingStreams:             1 << 60, // this should be high in client
-		MaxStreamReceiveWindow:         1 << 60,
-		MaxConnectionReceiveWindow:     1 << 60,
-		MaxIncomingUniStreams:          1 << 60,
-		InitialStreamReceiveWindow:     1 << 60,
-		InitialConnectionReceiveWindow: 1 << 60,
+		MaxIdleTimeout: 99999 * time.Second,
 	}
 	// conf.Tracer = func(ctx context.Context, p logging.Perspective, connID quic.ConnectionID) *logging.ConnectionTracer {
 	// 	if USE_BALANCER {
