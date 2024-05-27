@@ -7,8 +7,9 @@ from datetime import datetime as dt
 import matplotlib.pyplot as plt
 import pandas
 
-from rtp import *
 from qlog import *
+from rtp import *
+
 logging.basicConfig(level="INFO")
 logger = logging.getLogger()
 
@@ -41,7 +42,7 @@ with os.scandir(args.output_dir) as it:
 
 logger.debug("args: %s", args.mostrecent)
 sorted_run_files = sorted(collected_per_name.items(), reverse=True)
-#logger.debug("sorted_run_files: %s", sorted_run_files)
+# logger.debug("sorted_run_files: %s", sorted_run_files)
 logger.info("using files of run %s", sorted_run_files[args.mostrecent][0])
 
 
@@ -49,13 +50,16 @@ def get_specific_log(regex):
     ts, run_files = sorted_run_files[args.mostrecent]
     matching_logs = [entry for entry in run_files if re.match(regex, entry.name)]
     if len(matching_logs) != 1:
-        ts, next_run_files = sorted_run_files[args.mostrecent+1]
+        ts, next_run_files = sorted_run_files[args.mostrecent + 1]
         logger.warning("couldnt find file, trying again with ts %s \nfor %s", ts, regex)
-        matching_logs = [entry for entry in next_run_files if re.match(regex, entry.name)]
+        matching_logs = [
+            entry for entry in next_run_files if re.match(regex, entry.name)
+        ]
 
     assert len(matching_logs) == 1, "matching: %s" % matching_logs
 
     return matching_logs[0]
+
 
 client_rtp = get_specific_log(r".*client.*rtplog")
 server_rtp = get_specific_log(r".*server.*rtplog")
@@ -84,12 +88,18 @@ run = qlog_run(server_qlog, client_qlog)
 
 
 logger.setLevel("WARNING")
-arrive_delta_df.plot("ts")
+# arrive_delta_df.plot("ts")
 run.bitrate_df().plot("ts")
 
-run.cansendrequests().plot("ts")
+# run.cansendrequests().plot("ts")
+
+# run.rtt_slopes().plot("ts")
+
+run.rtt_slopes_scores().plot("ts")
+
+run.growthRate().plot("ts")
+run.allowedBytes().plot("ts")
+run.rateStatus().plot("ts")
+
 
 plt.show()
-
-
-
